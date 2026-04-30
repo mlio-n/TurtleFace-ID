@@ -1,0 +1,64 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# ── Sanal Ortamlar ────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── Dağıtım / Build ───────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# ── Model Ağırlıkları (büyük dosyalar — Git LFS önerilir) ─
+models/*.pth
+models/*.pt
+models/*.onnx
+*.safetensors
+
+# ── Veri Seti ve Veritabanı ───────────────────────────────
+data/
+datasets/
+*.pkl
+*.db
+database/database.pkl
+
+# ── Streamlit Cache ───────────────────────────────────────
+.streamlit/
+
+# ── Jupyter ───────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── IDE / Editor ──────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Loglar ve Geçici Dosyalar ─────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+
+# ── Test Çıktıları ────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Ortam Değişkenleri ────────────────────────────────────
+.env
+.env.local
+secrets.toml

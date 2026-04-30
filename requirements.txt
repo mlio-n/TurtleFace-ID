@@ -1,0 +1,35 @@
+# TurtleFace ID - Deniz Kaplumbağası Bireysel Tanıma Sistemi
+# ============================================================
+# Temel Bağımlılıklar
+
+# Derin Öğrenme Çerçevesi
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Görüntü İşleme
+opencv-python>=4.8.0
+Pillow>=10.0.0
+scikit-image>=0.21.0
+
+# Bilimsel Hesaplama
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Demo Arayüzü
+streamlit>=1.28.0
+plotly>=5.17.0
+
+# Veritabanı (Vektör Depolama)
+faiss-cpu>=1.7.4
+
+# Yardımcı Kütüphaneler
+tqdm>=4.66.0
+pydantic>=2.4.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Geliştirme Araçları
+pytest>=7.4.0
+black>=23.9.0
