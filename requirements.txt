@@ -17,6 +17,7 @@ scipy>=1.11.0
 
 # Demo Arayüzü
 streamlit>=1.28.0
+streamlit-cropper>=0.2.0
 plotly>=5.17.0
 
 # Veritabanı (Vektör Depolama)

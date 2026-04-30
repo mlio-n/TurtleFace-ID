@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 import streamlit as st
 from PIL import Image
+from streamlit_cropper import st_cropper
 
 from turtlefaceid.agents.identification_agent import IdentificationAgent, AgentState
 from turtlefaceid.utils.image_utils import ImageUtils
@@ -197,6 +198,24 @@ with upload_col:
     use_demo = st.checkbox("🔬 Demo görüntüsü kullan", value=True,
                            help="Gerçek fotoğraf yoksa sistem üretilmiş test görüntüsü kullanır.")
 
+    cropped_images = []
+    if uploaded_files:
+        st.markdown("<div style='margin-top: 1rem; color: #00D4B4;'><b>✂️ Kafa Bölgesini Seçin (Human-in-the-Loop)</b></div>", unsafe_allow_html=True)
+        for idx, f in enumerate(uploaded_files):
+            pil_img = Image.open(f).convert("RGB")
+            st.markdown(f"<div style='font-size: 0.85rem; color: #A0A0C0; margin-bottom: 5px;'>{f.name}</div>", unsafe_allow_html=True)
+            # Etkileşimli cropper
+            cropped_pil = st_cropper(
+                pil_img, 
+                realtime_update=True, 
+                box_color='#00D4B4',
+                aspect_ratio=None,
+                key=f"cropper_{idx}"
+            )
+            img_arr = ImageUtils.pil_to_numpy(cropped_pil)
+            cropped_images.append({"name": f.name, "array": img_arr})
+            st.markdown("<hr style='border-color: #2A2A4A; margin: 10px 0;'>", unsafe_allow_html=True)
+
     run_btn = st.button("🚀  Tanımlamayı Başlat", use_container_width=True)
 
     # Pipeline log paneli
@@ -211,10 +230,7 @@ if run_btn:
     # Görüntüleri hazırla
     images_to_process = []
     if uploaded_files:
-        for f in uploaded_files:
-            pil_img = Image.open(f).convert("RGB")
-            img_arr = ImageUtils.pil_to_numpy(pil_img)
-            images_to_process.append({"name": f.name, "array": img_arr})
+        images_to_process = cropped_images
     elif use_demo:
         rng = np.random.default_rng(seed=7)
         img_arr = rng.integers(40, 130, (320, 420, 3), dtype=np.uint8)
