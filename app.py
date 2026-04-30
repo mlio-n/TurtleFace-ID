@@ -278,32 +278,18 @@ if run_btn:
             progress_bar.progress(1.0, text="Tamamlandı ✓")
             status_text.empty()
             
-            # Sonuçları göster
-            r1c1, r1c2 = st.columns(2)
-            r2c1, r2c2 = st.columns(2)
+            # Sonuçları göster (Gereksiz paneller kaldırıldı, sadece Pul Haritası ve Kimlik Gösteriliyor)
+            img_col, info_col = st.columns([1.2, 1])
             
-            with r1c1:
-                show_image_card("1", "Orijinal Fotoğraf", f"{img_arr.shape[1]}×{img_arr.shape[0]} px", img_arr)
-                
-            det = result.detection_result
-            with r1c2:
-                if det and det.success:
-                    det_img = det.annotated_image if det.annotated_image is not None else det.cropped_face
-                    show_image_card("2", "Tespit Edilen Yüz", f"Güven: {det.confidence:.0%}  •  BBox: {det.bounding_box}", det_img)
-                    face_for_display = det.cropped_face
-                else:
-                    show_image_card("2", "Tespit Edilemedi", det.error_message if det else "Hata", None, "Yüz bulunamadı")
-                    face_for_display = img_arr
-                    
             sm = result.scute_map
-            with r2c1:
+            with img_col:
                 if sm and sm.success and sm.overlay_image is not None:
-                    show_image_card("3", "Pul Haritası", f"{sm.scute_count} scute bölgesi tespit edildi", sm.overlay_image)
+                    show_image_card("SONUÇ", "Pul Haritası (Scute Map)", f"{sm.scute_count} scute bölgesi tespit edildi", sm.overlay_image)
                 else:
-                    show_image_card("3", "Pul Haritası", "Pul segmentasyonu tamamlandı", face_for_display)
+                    show_image_card("SONUÇ", "Pul Haritası", "Pul segmentasyonu tamamlandı", img_arr)
                     
             mr = result.match_result
-            with r2c2:
+            with info_col:
                 if mr:
                     if mr.matched and mr.top_match:
                         t = mr.top_match
@@ -312,13 +298,8 @@ if run_btn:
                           <div class="match-score">{mr.similarity_pct}</div>
                           <div class="match-name">🐢 {t.name}</div>
                           <div class="match-id">{t.turtle_id} &nbsp;·&nbsp; {t.species}</div>
-                          <p style='color:#7090A0;font-size:0.82rem;margin-top:8px'>
-                            📍 {t.location or "—"} &nbsp;·&nbsp; 🗓 {t.first_seen or "—"}
-                          </p>
-                          <p style='color:#9090B0;font-size:0.78rem;margin-top:8px'>
-                            <b>Güven:</b> {mr.confidence_level.value}
-                          </p>
                         </div>""", unsafe_allow_html=True)
+                        st.success(f"**Açıklama:** En yakın aday '{t.name}' ({mr.similarity_pct} benzerlik). **%{mat_thresh*100:.0f} olan Eşleşme Eşiği (Threshold)** aşıldığı için kimlik DOĞRULANDI.")
                     else:
                         st.markdown(f"""
                         <div class="no-match-box">
@@ -326,32 +307,27 @@ if run_btn:
                           <div style='font-size:1.3rem;font-weight:700;color:#FF6B6B'>
                             Bilinmeyen Birey
                           </div>
-                          <p style='color:#A07070;font-size:0.85rem;margin-top:8px'>
-                            En yüksek benzerlik: {mr.similarity_pct}<br>
-                            Eşleşme eşiğinin altında.
-                          </p>
                         </div>""", unsafe_allow_html=True)
+                        
+                        top_pct = mr.similarity_pct if mr.top_match else "%0"
+                        top_name = mr.top_match.name if mr.top_match else "Bilinmiyor"
+                        st.info(f"**Açıklama:** Sistemdeki en yakın aday '{top_name}' ({top_pct} benzerlik). Ancak bu oran **%{mat_thresh*100:.0f} olan Eşleşme Eşiğinin (Threshold)** altında kaldığı için bu kaplumbağa BİLİNMEYEN BİREY olarak işaretlendi.")
                 else:
-                    show_image_card("4", "Eşleşme Sonucu", "Eşleştirme yapılamadı", None, "Hata")
+                    show_image_card("HATA", "Eşleşme Sonucu", "Eşleştirme yapılamadı", None, "Hata")
                     
-            # Metrikler ve Grafik
+            # Metrikler ve Basit Gösterge
             st.markdown("<br>", unsafe_allow_html=True)
-            m1, m2, m3, m4 = st.columns(4)
-            if mr: m1.metric("Benzerlik", mr.similarity_pct)
-            if sm: m2.metric("Tespit Edilen Pul", sm.scute_count)
-            m3.metric("İşlem Süresi", f"{result.total_time_ms:.0f} ms")
-            if mr: m4.metric("Aday Sayısı", len(mr.top_candidates))
+            m1, m2, m3 = st.columns(3)
+            if sm: m1.metric("Tespit Edilen Pul", sm.scute_count)
+            m2.metric("İşlem Süresi", f"{result.total_time_ms:.0f} ms")
+            if mr: m3.metric("En Yakın Benzerlik", mr.similarity_pct)
             
             if mr:
-                chart_col1, chart_col2 = st.columns(2)
+                # Sadece Gauge Chart gösteriliyor, karmaşık bar grafiği kaldırıldı
                 score = mr.similarity_score
                 label = mr.top_match.name if mr.matched and mr.top_match else "Bilinmeyen"
-                with chart_col1:
-                    st.markdown("**Benzerlik Göstergesi**")
-                    st.pyplot(Visualizer.similarity_gauge(score, label))
-                with chart_col2:
-                    st.markdown("**Top-5 Adaylar**")
-                    st.pyplot(Visualizer.candidates_bar(mr.top_candidates, highlight_id=mr.top_match.turtle_id if mr.top_match else None))
+                st.markdown("**Benzerlik Göstergesi**")
+                st.pyplot(Visualizer.similarity_gauge(score, label))
             
             st.markdown("<hr style='border-color:#2A2A4A;margin:2rem 0'>", unsafe_allow_html=True)
             
@@ -369,14 +345,11 @@ if run_btn:
             st.markdown("".join(all_logs), unsafe_allow_html=True)
 
 else:
-    # Varsayılan boş ekran
+    # Varsayılan boş ekran (Sadeleştirilmiş)
     with result_container:
-        r1c1, r1c2 = st.columns(2)
-        r2c1, r2c2 = st.columns(2)
-        with r1c1: show_image_card("1", "Orijinal Fotoğraf", "Ham girdi görüntüsü", None)
-        with r1c2: show_image_card("2", "Tespit Edilen Yüz", "Kırpılan kafa bölgesi", None)
-        with r2c1: show_image_card("3", "Pul Haritası", "Post-ocular scute analizi", None)
-        with r2c2: show_image_card("4", "Eşleşme Sonucu", "Veritabanı karşılaştırması", None)
+        img_col, info_col = st.columns([1.2, 1])
+        with img_col: show_image_card("SONUÇ", "Pul Haritası (Scute Map)", "Post-ocular scute analizi sonucu", None)
+        with info_col: show_image_card("KİMLİK", "Eşleşme Sonucu", "Veritabanı karşılaştırması", None)
 
 # ── Alt bilgi ─────────────────────────────────────────────────────────────
 st.markdown("""

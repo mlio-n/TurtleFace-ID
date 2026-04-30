@@ -188,12 +188,14 @@ class ScuteExtractor:
     def _compute_edge_map(self, gray: np.ndarray) -> np.ndarray:
         """
         Çok ölçekli Canny kenar haritası:
-          - İnce Gauss (sigma=1) kanalı ince pul sınırlarını,
-          - Kaba kanal (sigma=2) derin yapıları yakalar.
-        Sonuçlar OR ile birleştirilir.
+          - Bilateral Filter ile suyu/gürültüyü düzleştirir, yanak pullarını korur.
+          - İnce ve kaba Canny çıktıları OR ile birleştirilir.
         """
-        fine   = cv2.GaussianBlur(gray, (3, 3), 1.0)
-        coarse = cv2.GaussianBlur(gray, (7, 7), 2.0)
+        # ── 1. BILATERAL FILTER (Çift Taraflı Filtre) ─────────
+        smoothed = cv2.bilateralFilter(gray, d=9, sigmaColor=75, sigmaSpace=75)
+
+        fine   = cv2.GaussianBlur(smoothed, (3, 3), 1.0)
+        coarse = cv2.GaussianBlur(smoothed, (7, 7), 2.0)
 
         edges_fine   = cv2.Canny(fine,   self._EDGE_LOW_THRESH, self._EDGE_HIGH_THRESH)
         edges_coarse = cv2.Canny(coarse, self._EDGE_LOW_THRESH - 5, self._EDGE_HIGH_THRESH + 10)
@@ -215,26 +217,36 @@ class ScuteExtractor:
         contours, _ = cv2.findContours(filled, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         regions: list[ScuteRegion] = []
         
+        img_h, img_w = image_shape[:2]
+        
         # ── MAKSİMUM ALAN FİLTRESİ ────────────────────────────
-        # Bir pul, kırpılmış yüz alanının %25'inden büyük olamaz (örn. arka plan kayaları)
-        max_scute_area = (image_shape[0] * image_shape[1]) * 0.25
+        max_scute_area = (img_h * img_w) * 0.25
+        
+        # ── 2. BORDER REJECTION (Kenar Reddi) MARJINLERİ ──────
+        # Resmin dış %5'lik sınırına temas eden arka plan/su yansımalarını ele
+        margin_x = img_w * 0.05
+        margin_y = img_h * 0.05
 
         for idx, cnt in enumerate(contours):
             area = cv2.contourArea(cnt)
             if area < self._min_scute_area or area > max_scute_area:
                 continue
 
+            x, y, w, h  = cv2.boundingRect(cnt)
+            
+            # Kenar reddi kontrolü
+            if (x < margin_x or y < margin_y or 
+                x + w > img_w - margin_x or y + h > img_h - margin_y):
+                continue
+
             # Geometrik özellikler
             perimeter    = cv2.arcLength(cnt, True)
-            x, y, w, h  = cv2.boundingRect(cnt)
             aspect_ratio = float(w) / float(h + 1e-6)
 
             hull_area    = cv2.contourArea(cv2.convexHull(cnt))
             solidity     = area / (hull_area + 1e-6)
 
             # ── ŞEKİL FİLTRESİ (Contour Filter) ───────────────────
-            # Açık uçlu büyük çizgileri veya şekilsiz lekeleri (kabuk vb.) ele.
-            # Post-ocular pullar poligon/çokgen benzeri kapalı, kompakt alanlardır.
             if solidity < 0.65 or aspect_ratio < 0.25 or aspect_ratio > 4.0:
                 continue
 
@@ -252,8 +264,19 @@ class ScuteExtractor:
                 contour      = cnt,
             ))
 
-        # En büyük _MAX_REGIONS bölgeyi al
-        regions.sort(key=lambda r: r.area, reverse=True)
+        # ── 3. MERKEZ ODAKLILIK SKORU ─────────────────────
+        # Sadece alana göre değil, merkeze yakınlığa göre de puanla
+        center_x, center_y = img_w / 2.0, img_h / 2.0
+        max_dist = np.sqrt(center_x**2 + center_y**2) + 1e-6
+        
+        def scute_score(r: ScuteRegion) -> float:
+            cx, cy = r.centroid
+            dist = np.sqrt((cx - center_x)**2 + (cy - center_y)**2)
+            norm_dist = dist / max_dist
+            # Merkeze yakınlık skoru %80 etki etsin (kenardakilerin puanı düşer)
+            return r.area * (1.0 - norm_dist * 0.8)
+
+        regions.sort(key=scute_score, reverse=True)
         return regions[: self._MAX_REGIONS]
 
     @staticmethod
