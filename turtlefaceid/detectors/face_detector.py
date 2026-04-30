@@ -133,9 +133,30 @@ class FaceDetector:
         if not valid:
             return None, 0.0
         largest  = max(valid, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest)
+        
+        # ── HEAD ROI HEURISTIC (Vücut yerine Kafa Odaklanması) ────
+        # Bütün kaplumbağa bedeni tespit edildiyse, kafa bölgesini
+        # (ön %35'lik kısmı) kırpmak için kütle merkezi (Center of Mass) kullanıyoruz.
+        x_body, y_body, w_body, h_body = cv2.boundingRect(largest)
+        M = cv2.moments(largest)
+        cx = int(M["m10"] / M["m00"]) if M["m00"] > 0 else x_body + w_body // 2
+        
+        # Eğer kütle merkezi sağdaysa, kafa (hafif kısım) büyük ihtimalle soldadır.
+        is_head_left = cx > (x_body + w_body / 2)
+        head_w = int(w_body * 0.35)  # BBox genişliğinin %35'i
+        head_x_start = x_body if is_head_left else x_body + w_body - head_w
+        
+        # Sadece kafa bölgesine düşen kontur noktalarını filtrele
+        head_pts = np.array([pt for pt in largest if head_x_start <= pt[0][0] <= head_x_start + head_w])
+        
+        if len(head_pts) > 0:
+            x, y, w, h = cv2.boundingRect(head_pts)
+        else:
+            x, y, w, h = head_x_start, y_body, head_w, h_body
+            
         hull_area   = cv2.contourArea(cv2.convexHull(largest))
         confidence  = float(cv2.contourArea(largest) / (hull_area + 1e-6))
+        
         pad = int(min(w, h) * 0.15)
         x = max(0, x - pad); y = max(0, y - pad)
         w = min(shape[1] - x, w + 2 * pad)

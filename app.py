@@ -186,10 +186,11 @@ upload_col, result_col = st.columns([1, 2], gap="large")
 
 with upload_col:
     st.markdown("### 📤 Fotoğraf Yükle")
-    uploaded = st.file_uploader(
+    uploaded_files = st.file_uploader(
         "Kaplumbağa fotoğrafı seç",
         type=["jpg", "jpeg", "png", "bmp", "webp"],
-        help="Kaplumbağanın yüzünün göründüğü net bir fotoğraf yükleyin.",
+        accept_multiple_files=True,
+        help="Kaplumbağanın yüzünün göründüğü net bir fotoğraf yükleyin. Birden fazla fotoğraf seçebilirsiniz.",
         label_visibility="collapsed",
     )
 
@@ -203,198 +204,163 @@ with upload_col:
     log_container = st.empty()
 
 with result_col:
-    # 4 adım — 2x2 ızgara
-    r1c1, r1c2 = st.columns(2)
-    r2c1, r2c2 = st.columns(2)
-
-    orig_ph   = r1c1.empty()
-    det_ph    = r1c2.empty()
-    scute_ph  = r2c1.empty()
-    match_ph  = r2c2.empty()
-
-    # Boş yer tutucular
-    with orig_ph.container():
-        show_image_card("1", "Orijinal Fotoğraf", "Ham girdi görüntüsü", None)
-    with det_ph.container():
-        show_image_card("2", "Tespit Edilen Yüz", "Kırpılan kafa bölgesi", None)
-    with scute_ph.container():
-        show_image_card("3", "Pul Haritası", "Post-ocular scute analizi", None)
-    with match_ph.container():
-        show_image_card("4", "Eşleşme Sonucu", "Veritabanı karşılaştırması", None)
-
-    # Özet metrikler
-    st.markdown("---")
-    m1, m2, m3, m4 = st.columns(4)
-    met_conf   = m1.empty()
-    met_scutes = m2.empty()
-    met_time   = m3.empty()
-    met_cands  = m4.empty()
-
-    chart_col1, chart_col2 = st.columns(2)
-    gauge_ph   = chart_col1.empty()
-    bar_ph     = chart_col2.empty()
+    result_container = st.container()
 
 # ── Tanımlama Çalıştır ────────────────────────────────────────────────────
 if run_btn:
-    # Görüntüyü hazırla
-    if uploaded is not None:
-        pil_img = Image.open(uploaded).convert("RGB")
-        img_arr = ImageUtils.pil_to_numpy(pil_img)
+    # Görüntüleri hazırla
+    images_to_process = []
+    if uploaded_files:
+        for f in uploaded_files:
+            pil_img = Image.open(f).convert("RGB")
+            img_arr = ImageUtils.pil_to_numpy(pil_img)
+            images_to_process.append({"name": f.name, "array": img_arr})
     elif use_demo:
-        # Demo: gerçekçi yeşil tonlu sentetik görüntü
-        rng     = np.random.default_rng(seed=7)
+        rng = np.random.default_rng(seed=7)
         img_arr = rng.integers(40, 130, (320, 420, 3), dtype=np.uint8)
-        # Kaplumbağa benzeri renk tonu (kahverengi-yeşil)
-        img_arr[:, :, 0] = np.clip(img_arr[:, :, 0] + 30, 0, 180)  # R
-        img_arr[:, :, 1] = np.clip(img_arr[:, :, 1] + 20, 0, 150)  # G
-        img_arr[:, :, 2] = np.clip(img_arr[:, :, 2] - 10, 0, 100)  # B
+        img_arr[:, :, 0] = np.clip(img_arr[:, :, 0] + 30, 0, 180)
+        img_arr[:, :, 1] = np.clip(img_arr[:, :, 1] + 20, 0, 150)
+        img_arr[:, :, 2] = np.clip(img_arr[:, :, 2] - 10, 0, 100)
         img_arr = img_arr.astype(np.uint8)
+        images_to_process.append({"name": "Demo Görüntüsü", "array": img_arr})
     else:
-        st.warning("Lütfen bir fotoğraf yükleyin veya 'Demo görüntüsü kullan' seçeneğini işaretleyin.")
+        st.warning("Lütfen en az bir fotoğraf yükleyin veya 'Demo görüntüsü kullan' seçeneğini işaretleyin.")
         st.stop()
 
-    # İlerleme çubuğu
-    progress_bar = st.progress(0, text="Pipeline başlatılıyor…")
-    status_text  = st.empty()
-
-    def progress_callback(msg: str, val: float):
-        progress_bar.progress(min(val, 1.0), text=msg)
-        status_text.markdown(f"<p style='color:#00D4B4;font-size:0.85rem'>⟳ {msg}</p>",
-                             unsafe_allow_html=True)
-
-    # Ajanı yeniden oluştur (eşik ayarları için)
-    pipeline = IdentificationAgent(
-        use_demo_db=True,
-        detection_threshold=det_thresh,
-        match_threshold=mat_thresh,
-        embedding_dim=256,
-        progress_callback=progress_callback,
-    )
-
-    # Pipeline çalıştır
-    result = pipeline.identify(img_arr)
-
-    progress_bar.progress(1.0, text="Tamamlandı ✓")
-    status_text.empty()
-
-    # ── Adım 1: Orijinal görüntü ──────────────────────────────────────
-    with orig_ph.container():
-        show_image_card("1", "Orijinal Fotoğraf",
-                        f"{img_arr.shape[1]}×{img_arr.shape[0]} px", img_arr)
-
-    # ── Adım 2: Tespit ────────────────────────────────────────────────
-    det = result.detection_result
-    if det and det.success:
-        det_img = det.annotated_image if det.annotated_image is not None else det.cropped_face
-        with det_ph.container():
-            show_image_card("2", "Tespit Edilen Yüz",
-                            f"Güven: {det.confidence:.0%}  •  BBox: {det.bounding_box}",
-                            det_img)
-        face_for_display = det.cropped_face
-    else:
-        with det_ph.container():
-            show_image_card("2", "Tespit Edilemedi",
-                            det.error_message if det else "Hata", None,
-                            "Yüz bulunamadı")
-        face_for_display = img_arr   # fallback
-
-    # ── Adım 3: Pul haritası ──────────────────────────────────────────
-    sm = result.scute_map
-    if sm and sm.success and sm.overlay_image is not None:
-        with scute_ph.container():
-            show_image_card("3", "Pul Haritası",
-                            f"{sm.scute_count} scute bölgesi tespit edildi",
-                            sm.overlay_image)
-    else:
-        with scute_ph.container():
-            show_image_card("3", "Pul Haritası",
-                            "Pul segmentasyonu tamamlandı (kenar analizi)",
-                            face_for_display)
-
-    # ── Adım 4: Eşleşme sonucu ────────────────────────────────────────
-    mr = result.match_result
-    with match_ph.container():
-        show_image_card("4", "Eşleşme Sonucu",
-                        "Siamese Network benzerlik skoru", None,
-                        "Sonuç hesaplanıyor")
-        if mr:
-            if mr.matched and mr.top_match:
-                t = mr.top_match
-                st.markdown(f"""
-                <div class="match-box">
-                  <div class="match-score">{mr.similarity_pct}</div>
-                  <div class="match-name">🐢 {t.name}</div>
-                  <div class="match-id">{t.turtle_id} &nbsp;·&nbsp; {t.species}</div>
-                  <p style='color:#7090A0;font-size:0.82rem;margin-top:8px'>
-                    📍 {t.location or "—"} &nbsp;·&nbsp; 🗓 {t.first_seen or "—"}
-                  </p>
-                  <p style='color:#9090B0;font-size:0.78rem;margin-top:8px'>
-                    <b>Güven:</b> {mr.confidence_level.value}
-                  </p>
-                </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="no-match-box">
-                  <div style='font-size:2rem;color:#FF6B6B'>⚠️</div>
-                  <div style='font-size:1.3rem;font-weight:700;color:#FF6B6B'>
-                    Bilinmeyen Birey
-                  </div>
-                  <p style='color:#A07070;font-size:0.85rem;margin-top:8px'>
-                    En yüksek benzerlik: {mr.similarity_pct}<br>
-                    Eşleşme eşiğinin altında.
-                  </p>
-                  <p style='color:#806060;font-size:0.78rem'>
-                    Muhtemelen yeni bir kaplumbağa — veritabanına eklenmeli.
-                  </p>
-                </div>""", unsafe_allow_html=True)
-
-    # ── Metrikler ─────────────────────────────────────────────────────
-    if mr:
-        met_conf.metric("Benzerlik Skoru", mr.similarity_pct)
-    if sm:
-        met_scutes.metric("Tespit Edilen Pul", sm.scute_count)
-    met_time.metric("İşlem Süresi", f"{result.total_time_ms:.0f} ms")
-    if mr:
-        met_cands.metric("Aday Sayısı", len(mr.top_candidates))
-
-    # ── Gauge grafiği ─────────────────────────────────────────────────
-    if mr:
-        score     = mr.similarity_score
-        label     = mr.top_match.name if mr.matched and mr.top_match else "Bilinmeyen"
-        gauge_fig = Visualizer.similarity_gauge(score, label)
-        with gauge_ph:
-            st.markdown("**Benzerlik Göstergesi**")
-            st.pyplot(gauge_fig)
-
-        bar_fig = Visualizer.candidates_bar(
-            mr.top_candidates,
-            highlight_id=mr.top_match.turtle_id if mr.top_match else None,
+    with result_container:
+        st.markdown(f"<h3 style='color:#00D4B4; margin-bottom: 2rem;'>🧪 {len(images_to_process)} Fotoğraf İşleniyor...</h3>", unsafe_allow_html=True)
+        
+        # Ajanı oluştur
+        pipeline = IdentificationAgent(
+            use_demo_db=True,
+            detection_threshold=det_thresh,
+            match_threshold=mat_thresh,
+            embedding_dim=256,
         )
-        with bar_ph:
-            st.markdown("**Top-5 Adaylar**")
-            st.pyplot(bar_fig)
 
-    # ── Ajan günlüğü ──────────────────────────────────────────────────
-    with log_container:
-        log_html = ""
-        for entry in result.agent_log:
-            pct = int(entry["progress"] * 100)
-            log_html += (
-                f"<div class='log-entry'>"
-                f"[{entry['state']:25s}] {pct:3d}%  {entry['message']}"
-                f"</div>"
-            )
-        if result.error_message:
-            log_html += (
-                f"<div class='log-entry' style='color:#FF6B6B'>"
-                f"[ERROR] {result.error_message}</div>"
-            )
-        st.markdown(log_html, unsafe_allow_html=True)
+        all_logs = []
 
-    if result.success:
-        st.success("✅ Pipeline başarıyla tamamlandı!", icon="🐢")
-    else:
-        st.error(f"Pipeline başarısız: {result.error_message}")
+        for idx, item in enumerate(images_to_process):
+            img_name = item["name"]
+            img_arr = item["array"]
+            
+            st.markdown(f"<h4 style='color:#E0E0F0; margin-top: 1rem;'>📷 Fotoğraf {idx+1}: {img_name}</h4>", unsafe_allow_html=True)
+            
+            # Progress bar
+            progress_bar = st.progress(0, text=f"{img_name} işleniyor…")
+            status_text  = st.empty()
+            
+            def progress_callback(msg: str, val: float):
+                progress_bar.progress(min(val, 1.0), text=msg)
+                status_text.markdown(f"<p style='color:#00D4B4;font-size:0.85rem'>⟳ {msg}</p>", unsafe_allow_html=True)
+            
+            pipeline._progress_cb = progress_callback
+            
+            # Pipeline çalıştır
+            result = pipeline.identify(img_arr)
+            
+            progress_bar.progress(1.0, text="Tamamlandı ✓")
+            status_text.empty()
+            
+            # Sonuçları göster
+            r1c1, r1c2 = st.columns(2)
+            r2c1, r2c2 = st.columns(2)
+            
+            with r1c1:
+                show_image_card("1", "Orijinal Fotoğraf", f"{img_arr.shape[1]}×{img_arr.shape[0]} px", img_arr)
+                
+            det = result.detection_result
+            with r1c2:
+                if det and det.success:
+                    det_img = det.annotated_image if det.annotated_image is not None else det.cropped_face
+                    show_image_card("2", "Tespit Edilen Yüz", f"Güven: {det.confidence:.0%}  •  BBox: {det.bounding_box}", det_img)
+                    face_for_display = det.cropped_face
+                else:
+                    show_image_card("2", "Tespit Edilemedi", det.error_message if det else "Hata", None, "Yüz bulunamadı")
+                    face_for_display = img_arr
+                    
+            sm = result.scute_map
+            with r2c1:
+                if sm and sm.success and sm.overlay_image is not None:
+                    show_image_card("3", "Pul Haritası", f"{sm.scute_count} scute bölgesi tespit edildi", sm.overlay_image)
+                else:
+                    show_image_card("3", "Pul Haritası", "Pul segmentasyonu tamamlandı", face_for_display)
+                    
+            mr = result.match_result
+            with r2c2:
+                if mr:
+                    if mr.matched and mr.top_match:
+                        t = mr.top_match
+                        st.markdown(f"""
+                        <div class="match-box">
+                          <div class="match-score">{mr.similarity_pct}</div>
+                          <div class="match-name">🐢 {t.name}</div>
+                          <div class="match-id">{t.turtle_id} &nbsp;·&nbsp; {t.species}</div>
+                          <p style='color:#7090A0;font-size:0.82rem;margin-top:8px'>
+                            📍 {t.location or "—"} &nbsp;·&nbsp; 🗓 {t.first_seen or "—"}
+                          </p>
+                          <p style='color:#9090B0;font-size:0.78rem;margin-top:8px'>
+                            <b>Güven:</b> {mr.confidence_level.value}
+                          </p>
+                        </div>""", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="no-match-box">
+                          <div style='font-size:2rem;color:#FF6B6B'>⚠️</div>
+                          <div style='font-size:1.3rem;font-weight:700;color:#FF6B6B'>
+                            Bilinmeyen Birey
+                          </div>
+                          <p style='color:#A07070;font-size:0.85rem;margin-top:8px'>
+                            En yüksek benzerlik: {mr.similarity_pct}<br>
+                            Eşleşme eşiğinin altında.
+                          </p>
+                        </div>""", unsafe_allow_html=True)
+                else:
+                    show_image_card("4", "Eşleşme Sonucu", "Eşleştirme yapılamadı", None, "Hata")
+                    
+            # Metrikler ve Grafik
+            st.markdown("<br>", unsafe_allow_html=True)
+            m1, m2, m3, m4 = st.columns(4)
+            if mr: m1.metric("Benzerlik", mr.similarity_pct)
+            if sm: m2.metric("Tespit Edilen Pul", sm.scute_count)
+            m3.metric("İşlem Süresi", f"{result.total_time_ms:.0f} ms")
+            if mr: m4.metric("Aday Sayısı", len(mr.top_candidates))
+            
+            if mr:
+                chart_col1, chart_col2 = st.columns(2)
+                score = mr.similarity_score
+                label = mr.top_match.name if mr.matched and mr.top_match else "Bilinmeyen"
+                with chart_col1:
+                    st.markdown("**Benzerlik Göstergesi**")
+                    st.pyplot(Visualizer.similarity_gauge(score, label))
+                with chart_col2:
+                    st.markdown("**Top-5 Adaylar**")
+                    st.pyplot(Visualizer.candidates_bar(mr.top_candidates, highlight_id=mr.top_match.turtle_id if mr.top_match else None))
+            
+            st.markdown("<hr style='border-color:#2A2A4A;margin:2rem 0'>", unsafe_allow_html=True)
+            
+            # Logları biriktir
+            all_logs.append(f"<div style='margin-top: 10px; color: #E0E0F0;'><b>{img_name} Logları:</b></div>")
+            for entry in result.agent_log:
+                pct = int(entry["progress"] * 100)
+                all_logs.append(f"<div class='log-entry'>[{entry['state']:25s}] {pct:3d}%  {entry['message']}</div>")
+            if result.error_message:
+                all_logs.append(f"<div class='log-entry' style='color:#FF6B6B'>[ERROR] {result.error_message}</div>")
+
+        st.success("✅ Tüm fotoğrafların analizi başarıyla tamamlandı!", icon="🐢")
+        
+        with log_container:
+            st.markdown("".join(all_logs), unsafe_allow_html=True)
+
+else:
+    # Varsayılan boş ekran
+    with result_container:
+        r1c1, r1c2 = st.columns(2)
+        r2c1, r2c2 = st.columns(2)
+        with r1c1: show_image_card("1", "Orijinal Fotoğraf", "Ham girdi görüntüsü", None)
+        with r1c2: show_image_card("2", "Tespit Edilen Yüz", "Kırpılan kafa bölgesi", None)
+        with r2c1: show_image_card("3", "Pul Haritası", "Post-ocular scute analizi", None)
+        with r2c2: show_image_card("4", "Eşleşme Sonucu", "Veritabanı karşılaştırması", None)
 
 # ── Alt bilgi ─────────────────────────────────────────────────────────────
 st.markdown("""

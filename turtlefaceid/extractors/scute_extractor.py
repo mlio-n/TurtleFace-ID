@@ -214,10 +214,14 @@ class ScuteExtractor:
 
         contours, _ = cv2.findContours(filled, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         regions: list[ScuteRegion] = []
+        
+        # ── MAKSİMUM ALAN FİLTRESİ ────────────────────────────
+        # Bir pul, kırpılmış yüz alanının %25'inden büyük olamaz (örn. arka plan kayaları)
+        max_scute_area = (image_shape[0] * image_shape[1]) * 0.25
 
         for idx, cnt in enumerate(contours):
             area = cv2.contourArea(cnt)
-            if area < self._min_scute_area:
+            if area < self._min_scute_area or area > max_scute_area:
                 continue
 
             # Geometrik özellikler
@@ -227,6 +231,12 @@ class ScuteExtractor:
 
             hull_area    = cv2.contourArea(cv2.convexHull(cnt))
             solidity     = area / (hull_area + 1e-6)
+
+            # ── ŞEKİL FİLTRESİ (Contour Filter) ───────────────────
+            # Açık uçlu büyük çizgileri veya şekilsiz lekeleri (kabuk vb.) ele.
+            # Post-ocular pullar poligon/çokgen benzeri kapalı, kompakt alanlardır.
+            if solidity < 0.65 or aspect_ratio < 0.25 or aspect_ratio > 4.0:
+                continue
 
             M    = cv2.moments(cnt)
             cx   = M["m10"] / (M["m00"] + 1e-6)

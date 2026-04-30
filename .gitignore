@@ -62,3 +62,6 @@ htmlcov/
 .env
 .env.local
 secrets.toml
+
+# ¦¦ Akademik Raporlar ¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦¦
+RESEARCH_REPORT.md
